@@ -1,15 +1,15 @@
 [package]
-name = "export-findmy"
+name = "home-assistant-airtag-importer"
 version = "0.1.0"
 edition = "2021"
-description = "Export AirTag/FindMy accessory private keys from iCloud, producing plist files compatible with FindMy.py"
+description = "Export, convert, and diagnose Find My accessories for Home Assistant"
 
 [dependencies]
-rustpush = { git = "https://github.com/thisiscam/rustpush.git", branch = "findmy-export-support", default-features = false, features = ["remote-anisette-v3"] }
-omnisette = { git = "https://github.com/thisiscam/rustpush.git", branch = "findmy-export-support" }
-icloud_auth = { git = "https://github.com/thisiscam/rustpush.git", branch = "findmy-export-support", default-features = false, features = ["remote-anisette-v3"] }
-keystore = { git = "https://github.com/thisiscam/rustpush.git", branch = "findmy-export-support" }
-cloudkit-proto = { git = "https://github.com/thisiscam/rustpush.git", branch = "findmy-export-support" }
+rustpush = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989", default-features = false, features = ["remote-anisette-v3"] }
+omnisette = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989" }
+icloud_auth = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989", default-features = false, features = ["remote-anisette-v3"] }
+keystore = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989" }
+cloudkit-proto = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989" }
 tokio = { version = "1", features = ["full"] }
 plist = "1.7.0"
 sha2 = "0.10.8"
@@ -18,3 +18,7 @@ uuid = { version = "1.4.1", features = ["v4"] }
 rand = "0.8.5"
 libc = "0.2"
 pretty_env_logger = "0.5.0"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }

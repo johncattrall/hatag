@@ -1,100 +1,183 @@
-# export-findmy
+# Home Assistant AirTag Importer
 
-Export AirTag/FindMy accessory private keys from iCloud, producing `.plist` files compatible with [FindMy.py](https://github.com/malmeloo/FindMy.py).
+Export your own Find My accessory keys from iCloud, convert existing exports, and
+check nearby Bluetooth advertisements before importing devices into Home Assistant.
+Despite the name, exports can also include supported AirPods, iPhones, iPads, and Macs.
+This is a command-line preparation tool, **not** a Home Assistant integration or an
+Apple-supported application.
 
-Should works on any platform? --- Tested on MacOS 26
-
-## Prerequisites
-
-- [Rust toolchain](https://rustup.rs/)
-- `openssl` CLI (for building — generates dummy FairPlay certs needed by rustpush)
-- `protoc` (protobuf compiler) — `brew install protobuf` on macOS
+Fork of [thisiscam/export-findmy](https://github.com/thisiscam/export-findmy), built
+on [rustpush](https://github.com/OpenBubbles/rustpush) and
+[FindMy.py](https://github.com/malmeloo/FindMy.py).
 
 ## Build
 
+On macOS, install the Rust toolchain, protobuf compiler, and OpenSSL CLI:
+
 ```bash
-git clone https://github.com/thisiscam/export-findmy.git
-cd export-findmy
-cargo build --release
+brew install rust protobuf openssl
+
+git clone https://github.com/johncattrall/home-assistant-airtag-importer.git
+cd home-assistant-airtag-importer
+cargo build --release --locked
+./target/release/home-assistant-airtag-importer --help
 ```
 
-## Usage
+The dependency and its related crates are pinned to
+[`johncattrall/rustpush@299e4389`](https://github.com/johncattrall/rustpush/commit/299e4389b7bc68123922c651da92dac8ac45c989),
+which explicitly supplies the RFC 3394 AES key-wrap IV instead of panicking in
+OpenSSL. No dependency source is vendored in this repository.
+
+If Cargo cannot fetch an upstream submodule over SSH, use HTTPS for that build
+without changing global Git configuration:
 
 ```bash
-./target/release/export-findmy \
+env CARGO_NET_GIT_FETCH_WITH_CLI=true \
+  GIT_CONFIG_COUNT=1 \
+  GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf \
+  GIT_CONFIG_VALUE_0=git@github.com: \
+  cargo build --release --locked
+```
+
+## Export from iCloud
+
+```bash
+./target/release/home-assistant-airtag-importer \
   --apple-id you@example.com \
-  --output-dir ./keys
+  --output json \
+  --output-dir ./ha-imports
 ```
 
-The tool will prompt for:
-1. **Password** (hidden input)
-2. **2FA code** — enter the **SMS code** sent to your phone, not the code shown on other devices
-3. **Device passcode** — the screen lock passcode (iPhone PIN) or login password (Mac) of the device listed
+JSON is the default. Choose `--output plist` or `--output both` when needed. Existing
+files are never overwritten; use a fresh output directory for a later export.
+Names are joined using CloudKit record IDs, and filenames include a hash of the
+full record ID so duplicate or sanitized names cannot overwrite other accessories.
+You may rename files after export; identity and keys are inside the files.
 
-### Options
+The interactive exporter requests:
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--apple-id <email>` | Apple ID email | prompted if omitted |
-| `--anisette-url <url>` | Anisette v3 server URL | `https://ani.sidestore.io` |
-| `--output-dir <dir>` | Where to write plist files | `.` |
+1. Your Apple Account password (hidden input).
+2. The **SMS** two-factor code, not the code displayed on other Apple devices.
+3. The unlock passcode or login password of the trusted device selected by serial
+   number. This is not an AirTag passcode: AirTags have no passcode.
 
-### Example
+The default anisette v3 service is `https://ani.sidestore.io`; change it with
+`--anisette-url URL`. Offline conversion and diagnostics do not contact this service,
+sign in to Apple, or initialize iCloud Keychain state.
 
-```
-$ ./target/release/export-findmy --apple-id xxxx@xxx --output-dir ./keys
-Password:
-[1/7] Connecting to anisette server...
-[2/7] Logging in to Apple ID...
-2FA code: 123456
-  Logged in (dsid=......)
-[3/7] Fetching MobileMe delegate...
-[4/7] Setting up CloudKit & Keychain...
-[5/7] Joining iCloud Keychain trust circle...
-  Found 1 escrow bottle(s):
-    [0] ......
-  Using escrow bottle from device: L2MPKH342P
-  Enter the passcode of that device:
-  Joined keychain trust circle!
-[6/7] Fetching FindMy accessories from CloudKit...
-[7/7] Writing plist files...
-  🎧 Wilbur's AirTag (AirTag) -> ./keys/Wilbur_s_AirTag.plist
+## Convert existing exports offline
 
-Done! Exported 1 accessory plist file(s) to ./keys
+```bash
+./target/release/home-assistant-airtag-importer \
+  --convert=home-assistant \
+  --output-dir ./converted \
+  /path/to/old-export.plist /path/to/another-export.json
 ```
 
-## Output format
+This native conversion requires no Python or Apple login. It accepts legacy
+exporter plists with raw key bytes, Apple-style nested-key plists, and FindMy.py
+accessory JSON. Dates, key lengths, and observed alignment are validated. The old
+standalone `convert_findmy_export.py` command has been replaced by this mode.
+Original files are unchanged; existing output files are rejected rather than
+silently overwritten.
 
-Each accessory produces a `.plist` file containing:
+JSON output uses FindMy.py's `type: accessory` schema and preserves names,
+identifiers, pairing dates, and available rolling-key alignment. Unknown alignment
+stays unknown; no timestamp or index is invented. Plist output uses nested key
+fields and whole-second UTC dates compatible with Python's plist parser. FindMy.py's
+plist import API requires names/alignment to be supplied separately, so **use JSON
+for Home Assistant** to retain those automatically.
 
-| Key | Description |
-|-----|-------------|
-| `privateKey` | EC private key (for deriving rolling BLE keys) |
-| `sharedSecret` | Primary shared secret |
-| `secondarySharedSecret` | Secondary shared secret (if present) |
-| `publicKey` | EC public key |
-| `identifier` | Stable accessory identifier |
-| `name` | User-assigned name |
-| `emoji` | User-assigned emoji |
-| `model` | Hardware model |
-| `pairingDate` | When the accessory was paired |
+## Diagnose Bluetooth matching
 
-These files can be used directly with [FindMy.py](https://github.com/malmeloo/FindMy.py) for tracking AirTag locations.
+Python is required only for Bluetooth diagnostics. Install its pinned dependencies
+in a virtual environment (Python 3.10–3.14):
 
-## Security notes
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-diagnostics.txt
 
-- **Output plist files contain private key material.** Treat them like passwords.
-- Your Apple ID password and device passcode are never written to disk.
-- `anisette_state/` and `keystore.plist` are created in the working directory at runtime — these contain device provisioning state and keychain crypto keys. Delete them after use if you don't plan to run the tool again.
-- The anisette server only sees OTP header requests from your IP. It never sees your Apple ID, password, or iCloud data.
+./target/release/home-assistant-airtag-importer \
+  --diagnose --python .venv/bin/python \
+  --scan-seconds 30 \
+  ha-imports/*.findmy.json
+```
 
-## How it works
+Without explicit files, diagnostics reads JSON files from `--output-dir` (default
+`ha-imports`). `FINDMY_PYTHON` can select the interpreter instead of `--python`.
+The diagnostic source is embedded in the compiled binary, so moving the binary
+alone does not break its script lookup.
 
-1. Authenticates to Apple via SRP (using remote anisette for device identity tokens)
-2. Fetches MobileMe delegate tokens via the iOS `iosbuddy` login endpoint
-3. Joins the iCloud Keychain trust circle via escrow recovery (using your device passcode)
-4. Fetches encrypted `BeaconStore` records from CloudKit
-5. Decrypts records using PCS (Protected CloudStorage) keys from the keychain
-6. Writes accessory data to plist files
+Keep devices physically near the scanning computer. Enable Bluetooth and approve
+macOS Bluetooth access for your terminal when requested. Capture finishes before
+key matching begins; matching an old, unaligned export can take several minutes.
+Playing a sound can identify a physical device, but **does not establish alignment**.
+Do not repeatedly play sounds or assume a successful sound proves exported keys.
 
-Built on [rustpush](https://github.com/OpenBubbles/rustpush) by the OpenBubbles project.
+Diagnostics is read-only by default. It reports device names and matching status,
+not private keys, Bluetooth addresses, or locations. It never changes HA entries.
+A completed scan with no matches exits successfully; input, permission, adapter,
+and dependency failures exit nonzero.
+
+To persist verified primary-key alignment:
+
+```bash
+./target/release/home-assistant-airtag-importer \
+  --diagnose --save-alignment --python .venv/bin/python \
+  --scan-seconds 60 \
+  ha-imports/*.findmy.json
+```
+
+Only primary-key observations with a non-regressing index/date can be saved.
+Secondary-only matches are reported as conservative bounds and are **not** saved
+as exact primary alignment. Unmatched files stay unchanged. Before changing files,
+the tool creates and verifies an owner-only ZIP backup; changes use atomic file
+replacement and preserve all fields except the observed alignment date and index.
+Backups are private key material and are not encrypted.
+
+A scanning Mac cannot be assumed to receive its own advertisements. AirPods
+components, connected owner-nearby devices, and second-generation AirTag DULT
+advertisements may not be visible to the supported Offline Finding scanner.
+No match is not proof of a bad export. Do not reset accessories or iCloud Keychain
+just to make a scan succeed.
+
+## Import into Home Assistant
+
+Install the separate [hass-FindMy integration](https://github.com/malmeloo/hass-FindMy).
+Configure its Apple account, then add a **FindMy Device → Rolling, derived** and
+upload the desired `.findmy.json` file. If a previous upload failed, choose the file
+afresh instead of reusing the form's stale attachment.
+
+The importer does not modify HA configuration or replace existing entities. Preserve
+entity IDs when updating an existing device through your integration's supported
+workflow. Format validation and Bluetooth matching do not prove that Apple will
+return recent network location reports; a nearby owner-connected device may not
+produce the same network reports as a separated accessory.
+
+## Security and state
+
+- Output files, diagnostic backups, and archives contain **private tracking keys**.
+  Do not publish them or paste their contents into issues/chat.
+- On Unix, exported files and diagnostic backups use mode `0600`; created output
+  directories use `0700`. Protect copies and non-Unix destinations yourself.
+- `keystore.plist` and `anisette_state/` contain provisioning/keychain state. They are
+  separate from exported accessory files and must stay private.
+- The exporter authenticates as a synthetic device and joins the iCloud Keychain
+  trust circle. It retains the upstream escrow behavior; this is not a read-only
+  Apple account operation.
+- The common output, backup, virtual-environment, and state paths are ignored by
+  Git. Always inspect the explicit staged file list before publishing; custom
+  output directories are your responsibility.
+- Never commit real device fixtures. All regression fixtures use synthetic keys.
+
+## Development checks
+
+```bash
+cargo test --release --locked
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+```
+
+Regression coverage includes PCS key recovery, name/alignment association,
+collision-safe output, native format conversion, malformed inputs, and safe
+Bluetooth alignment updates. Real Bluetooth diagnostics and authenticated iCloud
+export require your own devices and cannot be demonstrated by synthetic tests alone.

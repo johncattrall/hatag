@@ -1,4 +1,10 @@
 /target
-Cargo.lock
 keystore.plist
 anisette_state/
+/ha-imports/
+/archives/
+/keys/
+/keys-named/
+__pycache__/
+/.venv/
+**/.alignment-backups/

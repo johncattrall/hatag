@@ -1,3 +1,9 @@
+mod cli;
+mod output;
+
+use clap::Parser;
+use output::{write_accessory, OutputFormat};
+
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::PathBuf;
@@ -126,59 +132,80 @@ impl OSConfig for FakeIOSConfig {
     }
 }
 
-// ── Plist generation ────────────────────────────────────────────────────
 
-fn accessory_to_plist(acc: &BeaconAccessory) -> plist::Value {
-    let mut dict = Dictionary::new();
+fn assemble_accessories(
+    beacon_records: HashMap<String, MasterBeaconRecord>,
+    mut naming_records: HashMap<String, (String, BeaconNamingRecord)>,
+    mut alignment_records: HashMap<String, (String, KeyAlignmentRecord)>,
+) -> HashMap<String, BeaconAccessory> {
+    let mut accessories = HashMap::new();
+    for (id, master) in beacon_records {
+        // Naming and alignment records reference the CloudKit record ID, not stableIdentifier.
+        let mut naming = naming_records.remove(&id).unwrap_or_else(|| {
+            (
+                String::new(),
+                BeaconNamingRecord {
+                    associated_beacon: id.clone(),
+                    ..Default::default()
+                },
+            )
+        });
+        if naming.1.name.trim().is_empty() {
+            naming.1.name = if master.model.trim().is_empty() {
+                "Unknown".to_string()
+            } else {
+                master.model.clone()
+            };
+        }
+        let alignment = alignment_records.remove(&id).unwrap_or_default();
+        accessories.insert(id, BeaconAccessory {
+            master_record: master,
+            naming: naming.1,
+            naming_id: naming.0,
+            naming_prot_tag: None,
+            alignment: alignment.1.clone(),
+            alignment_id: alignment.0,
+            aligment_prot_tag: None,
+            local_alignment: alignment.1,
+            last_report: None,
+            primary_ratchet: BeaconRatchet::default(),
+            secondary_ratchet: BeaconRatchet::default(),
+        });
+    }
+    accessories
+}
 
-    dict.insert(
-        "privateKey".to_string(),
-        plist::Value::Data(acc.master_record.private_key.clone()),
-    );
-    dict.insert(
-        "sharedSecret".to_string(),
-        plist::Value::Data(acc.master_record.shared_secret.clone()),
-    );
-    if let Some(ref ss2) = acc.master_record.shared_secret_2 {
-        dict.insert(
-            "secondarySharedSecret".to_string(),
-            plist::Value::Data(ss2.clone()),
-        );
-    }
-    if let Some(ref slss) = acc.master_record.secure_locations_shared_secret {
-        dict.insert(
-            "secureLocationsSharedSecret".to_string(),
-            plist::Value::Data(slss.clone()),
-        );
-    }
-    dict.insert(
-        "publicKey".to_string(),
-        plist::Value::Data(acc.master_record.public_key.clone()),
-    );
-    dict.insert(
-        "identifier".to_string(),
-        plist::Value::String(acc.master_record.stable_identifier.clone()),
-    );
-    dict.insert(
-        "model".to_string(),
-        plist::Value::String(acc.master_record.model.clone()),
-    );
-    if let Some(pairing_date) = acc.master_record.pairing_date {
-        dict.insert(
-            "pairingDate".to_string(),
-            plist::Value::Date(pairing_date.into()),
-        );
-    }
-    dict.insert(
-        "name".to_string(),
-        plist::Value::String(acc.naming.name.clone()),
-    );
-    dict.insert(
-        "emoji".to_string(),
-        plist::Value::String(acc.naming.emoji.clone()),
-    );
 
-    plist::Value::Dictionary(dict)
+#[cfg(test)]
+mod tests;
+
+fn run_diagnostics(args: &cli::Args) -> Result<(), Box<dyn std::error::Error>> {
+    let mut files = args.files.clone();
+    if files.is_empty() {
+        for entry in std::fs::read_dir(&args.output_dir)? {
+            let path = entry?.path();
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
+                files.push(path);
+            }
+        }
+        files.sort();
+    }
+    if files.is_empty() {
+        return Err("No JSON input files found; pass files or --output-dir".into());
+    }
+    let mut command = std::process::Command::new(&args.python);
+    command.args(["-u", "-c", include_str!("../python/diagnose.py"), "--scan-seconds"])
+        .arg(args.scan_seconds.to_string());
+    if args.save_alignment {
+        command.arg("--save-alignment");
+    }
+    let status = command.arg("--").args(files).status().map_err(|err| {
+        format!("Cannot run {}: {err}. Use --python PATH with requirements-diagnostics.txt installed.", args.python.display())
+    })?;
+    if !status.success() {
+        return Err(format!("Bluetooth diagnostics exited with {status}").into());
+    }
+    Ok(())
 }
 
 // ── Password reading ────────────────────────────────────────────────────
@@ -223,8 +250,27 @@ fn disable_echo_read() -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    pretty_env_logger::init();
+    let args = cli::Args::parse();
+    if args.diagnose {
+        return run_diagnostics(&args);
+    }
+    if args.convert.is_some() {
+        if args.files.is_empty() {
+            return Err("--convert=home-assistant requires one or more input files".into());
+        }
+        for path in output::convert_home_assistant(&args.files, &args.output_dir)? {
+            println!("Converted: {}", path.display());
+        }
+        return Ok(());
+    }
+    if !args.files.is_empty() {
+        return Err("Input files require --convert=home-assistant or --diagnose".into());
+    }
 
+    // Export authentication state and key material must be private from creation.
+    #[cfg(unix)]
+    unsafe { libc::umask(0o077); }
+    pretty_env_logger::init();
     init_keystore(SoftwareKeystore {
         state: plist::from_file("keystore.plist").unwrap_or_default(),
         update_state: Box::new(|state| {
@@ -232,46 +278,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
         encryptor: NoEncryptor,
     });
-
-    let args: Vec<String> = std::env::args().collect();
-
-    let mut apple_id = String::new();
-    let mut anisette_url = "https://ani.sidestore.io".to_string();
-    let mut output_dir = PathBuf::from(".");
-
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--apple-id" => {
-                i += 1;
-                apple_id = args[i].clone();
-            }
-            "--anisette-url" => {
-                i += 1;
-                anisette_url = args[i].clone();
-            }
-            "--output-dir" => {
-                i += 1;
-                output_dir = PathBuf::from(&args[i]);
-            }
-            "--help" | "-h" => {
-                eprintln!("Usage: export_findmy [OPTIONS]");
-                eprintln!();
-                eprintln!("Options:");
-                eprintln!("  --apple-id <email>       Apple ID email");
-                eprintln!("  --anisette-url <url>     Anisette server URL (default: https://ani.sidestore.io)");
-                eprintln!("  --output-dir <dir>       Output directory for plist files (default: .)");
-                eprintln!();
-                eprintln!("WARNING: Output plist files contain private key material.");
-                return Ok(());
-            }
-            _ => {
-                eprintln!("Unknown argument: {}", args[i]);
-                return Ok(());
-            }
-        }
-        i += 1;
-    }
+    let mut apple_id = args.apple_id.unwrap_or_default();
+    let anisette_url = args.anisette_url;
+    let output_dir = args.output_dir;
+    let format: OutputFormat = args.output.into();
 
     if apple_id.is_empty() {
         eprint!("Apple ID: ");
@@ -282,7 +292,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprint!("Password: ");
     let password = read_password();
 
-    std::fs::create_dir_all(&output_dir)?;
 
     let config: Arc<dyn OSConfig> = Arc::new(FakeIOSConfig::new());
 
@@ -479,78 +488,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ── Assemble accessories ────────────────────────────────────────
-    let mut accessories: HashMap<String, BeaconAccessory> = HashMap::new();
+    let accessories = assemble_accessories(beacon_records, naming_records, alignment_records);
 
-    for (id, master) in beacon_records {
-        let stable_id = master.stable_identifier.clone();
-        let naming = naming_records
-            .remove(&stable_id)
-            .unwrap_or_else(|| {
-                (
-                    String::new(),
-                    BeaconNamingRecord {
-                        emoji: "".to_string(),
-                        name: format!("Unknown-{}", &stable_id[..8.min(stable_id.len())]),
-                        associated_beacon: stable_id.clone(),
-                        role_id: 0,
-                    },
-                )
-            });
-        let alignment = alignment_records
-            .remove(&stable_id)
-            .map(|(id, rec)| (id, rec))
-            .unwrap_or_default();
-        accessories.insert(
-            id,
-            BeaconAccessory {
-                master_record: master,
-                naming: naming.1,
-                naming_id: naming.0,
-                naming_prot_tag: None,
-                alignment: alignment.1.clone(),
-                alignment_id: alignment.0,
-                aligment_prot_tag: None,
-                local_alignment: alignment.1,
-                last_report: None,
-                primary_ratchet: BeaconRatchet::default(),
-                secondary_ratchet: BeaconRatchet::default(),
-            },
-        );
-    }
-
-    // ── Step 7: Write plist files ───────────────────────────────────
-    eprintln!("[7/7] Writing plist files...");
+    // ── Step 7: Write requested output formats ───────────────────────
+    eprintln!("[7/7] Writing accessory files...");
 
     if accessories.is_empty() {
         eprintln!("  No accessories found!");
         return Ok(());
     }
 
-    for acc in accessories.values() {
-        let safe_name: String = acc
-            .naming
-            .name
-            .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
-            .collect();
-        let filename = format!("{}.plist", safe_name);
-        let path = output_dir.join(&filename);
-
-        let plist_val = accessory_to_plist(acc);
-        plist::to_file_xml(&path, &plist_val)?;
-
-        eprintln!(
-            "  {} {} ({}) -> {}",
-            acc.naming.emoji,
-            acc.naming.name,
-            acc.master_record.model,
-            path.display()
-        );
+    for (id, acc) in &accessories {
+        for path in write_accessory(&output_dir, id, acc, format)? {
+            eprintln!(
+                "  {} {} ({}) -> {}",
+                acc.naming.emoji,
+                acc.naming.name,
+                acc.master_record.model,
+                path.display()
+            );
+        }
     }
 
     eprintln!();
     eprintln!(
-        "Done! Exported {} accessory plist file(s) to {}",
+        "Done! Exported {} accessory record(s) to {}",
         accessories.len(),
         output_dir.display()
     );
