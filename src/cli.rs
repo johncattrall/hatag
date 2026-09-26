@@ -54,7 +54,7 @@ pub struct Args {
     pub anisette_url: String,
 
     /// Python interpreter containing requirements-diagnostics.txt (or FINDMY_PYTHON)
-    #[arg(long, env = "FINDMY_PYTHON", default_value = "python3", requires = "diagnose")]
+    #[arg(long, env = "FINDMY_PYTHON", default_value = "python3")]
     pub python: PathBuf,
 
     /// Bluetooth capture duration; key matching may take longer

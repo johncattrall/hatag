@@ -10,6 +10,33 @@ Fork of [thisiscam/export-findmy](https://github.com/thisiscam/export-findmy), b
 on [rustpush](https://github.com/OpenBubbles/rustpush) and
 [FindMy.py](https://github.com/malmeloo/FindMy.py).
 
+## Install with Homebrew
+
+On **Apple Silicon macOS 14 (Sonoma) or newer**:
+
+```bash
+brew install johncattrall/tap/home-assistant-airtag-importer
+home-assistant-airtag-importer --help
+```
+
+The formula installs the release binary and an isolated Python 3.14 environment
+with checksummed, pinned diagnostic dependencies. Rust and a manual virtualenv
+are not required. The installed command selects its bundled Python automatically;
+`--python PATH` or `FINDMY_PYTHON` can override it.
+
+```bash
+home-assistant-airtag-importer --output json --output-dir ./ha-imports
+home-assistant-airtag-importer --diagnose --scan-seconds 30 ha-imports/*.findmy.json
+brew upgrade johncattrall/tap/home-assistant-airtag-importer
+```
+
+This is our [personal tap](https://github.com/johncattrall/homebrew-tap), not a
+Homebrew/core package. The current binary is built for arm64; Intel and Linux users
+must build from source. macOS may request Bluetooth permission for your terminal.
+Upgrade/uninstall does not remove exported files, backups, or Apple state created
+in your working directory. Versioned binaries and their corresponding source
+archives are published on the repository's Releases page.
+
 ## Build
 
 On macOS, install the Rust toolchain, protobuf compiler, and OpenSSL CLI:
