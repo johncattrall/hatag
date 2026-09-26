@@ -78,8 +78,18 @@ Each accessory produces a `.plist` file containing:
 | `emoji` | User-assigned emoji |
 | `model` | Hardware model |
 | `pairingDate` | When the accessory was paired |
+| `lastIndexObservationDate` | CloudKit rolling-key observation date, when available |
+| `lastIndexObserved` | Rolling-key index at the observation date |
 
-These files can be used directly with [FindMy.py](https://github.com/malmeloo/FindMy.py) for tracking AirTag locations.
+Filenames use the sanitized accessory name followed by the SHA-256 of its full
+CloudKit record ID, preventing duplicate names from overwriting each other.
+The name prefix is bounded to 120 UTF-8 bytes. The internal stable identifier
+and private key material are unchanged. Name and alignment records reference the
+CloudKit record ID, not the stable identifier.
+
+Consumers must normalize raw key fields and dates as required by their FindMy.py
+version. Preserve both alignment fields during conversion; when no CloudKit
+observation exists, do not invent an alignment date or index.
 
 ## Security notes
 

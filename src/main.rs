@@ -169,6 +169,10 @@ fn accessory_to_plist(acc: &BeaconAccessory) -> plist::Value {
             plist::Value::Date(pairing_date.into()),
         );
     }
+    if let Some(observed_at) = acc.alignment.last_index_observation_date {
+        dict.insert("lastIndexObservationDate".to_string(), plist::Value::Date(observed_at.into()));
+        dict.insert("lastIndexObserved".to_string(), plist::Value::Integer(acc.alignment.last_index_observed.into()));
+    }
     dict.insert(
         "name".to_string(),
         plist::Value::String(acc.naming.name.clone()),
@@ -179,6 +183,23 @@ fn accessory_to_plist(acc: &BeaconAccessory) -> plist::Value {
     );
 
     plist::Value::Dictionary(dict)
+}
+
+fn accessory_filename(name: &str, record_id: &str) -> String {
+    use std::fmt::Write;
+    let mut filename = String::with_capacity(192);
+    for c in name.chars() {
+        let c = if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' };
+        if filename.len() + c.len_utf8() > 120 { break; }
+        filename.push(c);
+    }
+    if filename.is_empty() { filename.push_str("Unknown"); }
+    filename.push_str("--");
+    for byte in Sha256::digest(record_id.as_bytes()) {
+        write!(&mut filename, "{byte:02x}").unwrap();
+    }
+    filename.push_str(".plist");
+    filename
 }
 
 // ── Password reading ────────────────────────────────────────────────────
@@ -482,23 +503,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut accessories: HashMap<String, BeaconAccessory> = HashMap::new();
 
     for (id, master) in beacon_records {
-        let stable_id = master.stable_identifier.clone();
         let naming = naming_records
-            .remove(&stable_id)
+            .remove(&id)
             .unwrap_or_else(|| {
                 (
                     String::new(),
                     BeaconNamingRecord {
                         emoji: "".to_string(),
-                        name: format!("Unknown-{}", &stable_id[..8.min(stable_id.len())]),
-                        associated_beacon: stable_id.clone(),
+                        name: if master.model.is_empty() { "Unknown".to_string() } else { master.model.clone() },
+                        associated_beacon: id.clone(),
                         role_id: 0,
                     },
                 )
             });
         let alignment = alignment_records
-            .remove(&stable_id)
-            .map(|(id, rec)| (id, rec))
+            .remove(&id)
             .unwrap_or_default();
         accessories.insert(
             id,
@@ -526,15 +545,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    for acc in accessories.values() {
-        let safe_name: String = acc
-            .naming
-            .name
-            .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
-            .collect();
-        let filename = format!("{}.plist", safe_name);
-        let path = output_dir.join(&filename);
+    for (id, acc) in &accessories {
+        let path = output_dir.join(accessory_filename(&acc.naming.name, id));
 
         let plist_val = accessory_to_plist(acc);
         plist::to_file_xml(&path, &plist_val)?;
@@ -556,4 +568,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_sanitized_names_have_distinct_bounded_paths() {
+        let first = accessory_filename("Keys/home", "first-record");
+        let second = accessory_filename("Keys:home", "second-record");
+        assert_ne!(first, second);
+        for name in ["", "../outside", &"鑰匙".repeat(100)] {
+            let path = accessory_filename(name, "record/identifier");
+            assert!(path.len() <= 255);
+            assert_eq!(std::path::Path::new(&path).components().count(), 1);
+        }
+    }
+
+    #[test]
+    fn exports_observed_alignment_without_changing_stable_identity() {
+        let observed_at = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_790_000_000);
+        let alignment = KeyAlignmentRecord {
+            beacon_identifier: "cloudkit-record".into(),
+            last_index_observed: 42,
+            last_index_observation_date: Some(observed_at),
+        };
+        let acc = BeaconAccessory {
+            master_record: MasterBeaconRecord { stable_identifier: "stable-id".into(), ..Default::default() },
+            naming: BeaconNamingRecord::default(),
+            naming_id: String::new(),
+            naming_prot_tag: None,
+            alignment: alignment.clone(),
+            alignment_id: String::new(),
+            aligment_prot_tag: None,
+            local_alignment: alignment,
+            last_report: None,
+            primary_ratchet: BeaconRatchet::default(),
+            secondary_ratchet: BeaconRatchet::default(),
+        };
+        let value = accessory_to_plist(&acc);
+        let dict = value.as_dictionary().unwrap();
+        assert_eq!(dict["identifier"].as_string(), Some("stable-id"));
+        assert_eq!(dict["lastIndexObserved"].as_signed_integer(), Some(42));
+        assert_eq!(dict["lastIndexObservationDate"].as_date(), Some(observed_at.into()));
+    }
 }
