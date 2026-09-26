@@ -7,7 +7,7 @@ struct FixtureDirectory(PathBuf);
 
 impl FixtureDirectory {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("airtag-importer-{}", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("hatag-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&path).unwrap();
         Self(path)
     }

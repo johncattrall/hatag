@@ -27,7 +27,7 @@ pub enum Conversion {
 }
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Export Find My accessory keys and prepare Home Assistant imports")]
+#[command(version, about = "HAtag: tag export and diagnostics for Home Assistant")]
 pub struct Args {
     /// Scan local Bluetooth advertisements; no Apple login is performed
     #[arg(long, conflicts_with = "convert")]
@@ -53,8 +53,8 @@ pub struct Args {
     #[arg(long, default_value = "https://ani.sidestore.io", conflicts_with_all = ["diagnose", "convert"])]
     pub anisette_url: String,
 
-    /// Python interpreter containing requirements-diagnostics.txt (or FINDMY_PYTHON)
-    #[arg(long, env = "FINDMY_PYTHON", default_value = "python3")]
+    /// Python interpreter containing requirements-diagnostics.txt (or HATAG_PYTHON)
+    #[arg(long, env = "HATAG_PYTHON", default_value = "python3")]
     pub python: PathBuf,
 
     /// Bluetooth capture duration; key matching may take longer

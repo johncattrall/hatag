@@ -1,8 +1,8 @@
 [package]
-name = "home-assistant-airtag-importer"
-version = "0.1.1"
+name = "hatag"
+version = "0.1.2"
 edition = "2021"
-description = "Export, convert, and diagnose Find My accessories for Home Assistant"
+description = "HAtag: tag export and diagnostics for Home Assistant"
 
 [dependencies]
 rustpush = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989", default-features = false, features = ["remote-anisette-v3"] }

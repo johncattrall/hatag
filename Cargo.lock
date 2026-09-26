@@ -1204,6 +1204,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "hatag"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "clap",
+ "cloudkit-proto",
+ "icloud_auth",
+ "keystore",
+ "libc",
+ "omnisette",
+ "plist",
+ "pretty_env_logger",
+ "rand 0.8.8",
+ "rustpush",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1243,29 +1266,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
 dependencies = [
  "digest",
-]
-
-[[package]]
-name = "home-assistant-airtag-importer"
-version = "0.1.1"
-dependencies = [
- "async-trait",
- "chrono",
- "clap",
- "cloudkit-proto",
- "icloud_auth",
- "keystore",
- "libc",
- "omnisette",
- "plist",
- "pretty_env_logger",
- "rand 0.8.8",
- "rustpush",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "uuid",
 ]
 
 [[package]]

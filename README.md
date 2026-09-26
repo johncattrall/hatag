@@ -1,10 +1,10 @@
-# Home Assistant AirTag Importer
+# HAtag
 
 Export your own Find My accessory keys from iCloud, convert existing exports, and
 check nearby Bluetooth advertisements before importing devices into Home Assistant.
-Despite the name, exports can also include supported AirPods, iPhones, iPads, and Macs.
-This is a command-line preparation tool, **not** a Home Assistant integration or an
-Apple-supported application.
+Supports compatible AirTag accessories, AirPods, iPhones, iPads, and Macs.
+This is an independent command-line preparation tool, **not** a Home Assistant
+integration, and is not affiliated with or endorsed by Apple or the Open Home Foundation.
 
 Fork of [thisiscam/export-findmy](https://github.com/thisiscam/export-findmy), built
 on [rustpush](https://github.com/OpenBubbles/rustpush) and
@@ -15,19 +15,19 @@ on [rustpush](https://github.com/OpenBubbles/rustpush) and
 On **Apple Silicon macOS 14 (Sonoma) or newer**:
 
 ```bash
-brew install johncattrall/tap/home-assistant-airtag-importer
-home-assistant-airtag-importer --help
+brew install johncattrall/tap/hatag
+hatag --help
 ```
 
 The formula installs the release binary and an isolated Python 3.14 environment
 with checksummed, pinned diagnostic dependencies. Rust and a manual virtualenv
 are not required. The installed command selects its bundled Python automatically;
-`--python PATH` or `FINDMY_PYTHON` can override it.
+`--python PATH` or `HATAG_PYTHON` can override it.
 
 ```bash
-home-assistant-airtag-importer --output json --output-dir ./ha-imports
-home-assistant-airtag-importer --diagnose --scan-seconds 30 ha-imports/*.findmy.json
-brew upgrade johncattrall/tap/home-assistant-airtag-importer
+hatag --output json --output-dir ./ha-imports
+hatag --diagnose --scan-seconds 30 ha-imports/*.findmy.json
+brew upgrade johncattrall/tap/hatag
 ```
 
 This is our [personal tap](https://github.com/johncattrall/homebrew-tap), not a
@@ -37,6 +37,21 @@ Upgrade/uninstall does not remove exported files, backups, or Apple state create
 in your working directory. Versioned binaries and their corresponding source
 archives are published on the repository's Releases page.
 
+### Upgrading an existing installation
+
+```bash
+brew update
+brew install johncattrall/tap/hatag
+brew upgrade johncattrall/tap/hatag
+```
+
+Homebrew's rename metadata migrates the former `home-assistant-airtag-importer`
+package. Use `hatag` afterward; no old command alias is installed. If you selected
+a Python interpreter through the environment, rename `FINDMY_PYTHON` to
+`HATAG_PYTHON`. Existing `.findmy.json` files, output folders, and backups require
+no conversion or renaming.
+
+
 ## Build
 
 On macOS, install the Rust toolchain, protobuf compiler, and OpenSSL CLI:
@@ -44,10 +59,10 @@ On macOS, install the Rust toolchain, protobuf compiler, and OpenSSL CLI:
 ```bash
 brew install rust protobuf openssl
 
-git clone https://github.com/johncattrall/home-assistant-airtag-importer.git
-cd home-assistant-airtag-importer
+git clone https://github.com/johncattrall/hatag.git
+cd hatag
 cargo build --release --locked
-./target/release/home-assistant-airtag-importer --help
+./target/release/hatag --help
 ```
 
 The dependency and its related crates are pinned to
@@ -69,7 +84,7 @@ env CARGO_NET_GIT_FETCH_WITH_CLI=true \
 ## Export from iCloud
 
 ```bash
-./target/release/home-assistant-airtag-importer \
+./target/release/hatag \
   --apple-id you@example.com \
   --output json \
   --output-dir ./ha-imports
@@ -95,7 +110,7 @@ sign in to Apple, or initialize iCloud Keychain state.
 ## Convert existing exports offline
 
 ```bash
-./target/release/home-assistant-airtag-importer \
+./target/release/hatag \
   --convert=home-assistant \
   --output-dir ./converted \
   /path/to/old-export.plist /path/to/another-export.json
@@ -124,14 +139,14 @@ in a virtual environment (Python 3.10–3.14):
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-diagnostics.txt
 
-./target/release/home-assistant-airtag-importer \
+./target/release/hatag \
   --diagnose --python .venv/bin/python \
   --scan-seconds 30 \
   ha-imports/*.findmy.json
 ```
 
 Without explicit files, diagnostics reads JSON files from `--output-dir` (default
-`ha-imports`). `FINDMY_PYTHON` can select the interpreter instead of `--python`.
+`ha-imports`). `HATAG_PYTHON` can select the interpreter instead of `--python`.
 The diagnostic source is embedded in the compiled binary, so moving the binary
 alone does not break its script lookup.
 
@@ -149,7 +164,7 @@ and dependency failures exit nonzero.
 To persist verified primary-key alignment:
 
 ```bash
-./target/release/home-assistant-airtag-importer \
+./target/release/hatag \
   --diagnose --save-alignment --python .venv/bin/python \
   --scan-seconds 60 \
   ha-imports/*.findmy.json
