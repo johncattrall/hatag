@@ -274,10 +274,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     unsafe { libc::umask(0o077); }
     pretty_env_logger::init();
-    let state_dir = paths::state_directory(args.state_dir.as_deref())?;
     let output_dir = paths::output_directory(args.output_dir.as_deref())?;
+    paths::require_writable_output_directory(&output_dir)?;
+    let state_dir = paths::state_directory(args.state_dir.as_deref())?;
     paths::require_writable_directory(&state_dir, "--state-dir")?;
-    paths::require_writable_directory(&output_dir, "--output-dir")?;
     let anisette_config_path = state_dir.join("anisette_state");
     paths::require_writable_directory(&anisette_config_path, "--state-dir")?;
     let keystore_path = state_dir.join("keystore.plist");

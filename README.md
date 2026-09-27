@@ -118,9 +118,13 @@ It uses the current user's application-data directory:
 | Linux | `$XDG_DATA_HOME/hatag`, or `~/.local/share/hatag` |
 | Windows | `%LOCALAPPDATA%\hatag` |
 
-Authentication files live in `state/`; exports default to `exports/`. The actual
-paths are printed and write access is checked **before** asking for your Apple ID
-or password. Created storage directories are private (`0700` on Unix).
+Authentication files live in `state/` beneath that application-data directory.
+**Exports and offline conversions default to the current working directory**,
+unless `--output-dir PATH` is supplied. Paths are printed and output write access
+is checked **before** asking for your Apple ID or password. If the output directory
+isn't writable, change to a writable directory or specify `--output-dir`; HAtag
+does not fall back to Application Support or change existing output permissions.
+New directories use `0700` on Unix and exported files use `0600`.
 
 Use `--state-dir PATH` (or `HATAG_STATE_DIR`) to choose a different authentication
 directory, and `--output-dir PATH` for exports or offline conversions. A relative
@@ -130,6 +134,10 @@ Versions before 0.1.3 wrote `keystore.plist` and `anisette_state/` into the work
 directory. They are not moved or deleted automatically. To reuse them, pass
 `--state-dir /path/to/that/old/directory`; choose a fresh output directory when
 exporting again. Explicit diagnostic file arguments are unaffected by these defaults.
+
+Version 0.1.3 briefly defaulted exports to `hatag/exports` beneath application data.
+Existing files there are left untouched; starting with 0.1.4, the default is the
+working directory. To keep using that folder, select it with `--output-dir`.
 
 
 ## Convert existing exports offline
@@ -171,7 +179,7 @@ python3 -m venv .venv
 ```
 
 Without explicit files, diagnostics reads JSON files from `--output-dir` (default
-`hatag/exports` beneath the user's application-data directory). `HATAG_PYTHON` can select the interpreter instead of `--python`.
+the current working directory). `HATAG_PYTHON` can select the interpreter instead of `--python`.
 The diagnostic source is embedded in the compiled binary, so moving the binary
 alone does not break its script lookup.
 

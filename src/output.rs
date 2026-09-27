@@ -362,7 +362,7 @@ fn write_outputs(
             Err(error) => return Err(error.into()),
         }
     }
-    crate::paths::private_directory(output_dir)?;
+    crate::paths::require_writable_output_directory(output_dir)?;
     let mut paths = Vec::with_capacity(outputs.len());
     for (path, bytes) in outputs {
         let mut options = OpenOptions::new();

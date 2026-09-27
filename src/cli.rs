@@ -41,7 +41,7 @@ pub struct Args {
     #[arg(long, value_enum, default_value = "json", conflicts_with_all = ["diagnose", "convert"])]
     pub output: Format,
 
-    /// Export/conversion directory; defaults to the user's application-data hatag/exports
+    /// Export/conversion directory; defaults to the current working directory
     #[arg(long)]
     pub output_dir: Option<PathBuf>,
 
