@@ -41,9 +41,13 @@ pub struct Args {
     #[arg(long, value_enum, default_value = "json", conflicts_with_all = ["diagnose", "convert"])]
     pub output: Format,
 
-    /// Directory for exports or conversions; diagnostics scans its JSON files when no files are given
-    #[arg(long, default_value = "ha-imports")]
-    pub output_dir: PathBuf,
+    /// Export/conversion directory; defaults to the user's application-data hatag/exports
+    #[arg(long)]
+    pub output_dir: Option<PathBuf>,
+
+    /// Authentication storage; defaults to the user's application-data hatag/state
+    #[arg(long, env = "HATAG_STATE_DIR", conflicts_with_all = ["diagnose", "convert"])]
+    pub state_dir: Option<PathBuf>,
 
     /// Apple Account email (prompted if omitted)
     #[arg(long, conflicts_with_all = ["diagnose", "convert"])]

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::error::Error;
-use std::fs::{self, DirBuilder, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{self, Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -344,28 +344,6 @@ pub fn convert_home_assistant(
     write_outputs(output_dir, outputs)
 }
 
-fn private_directory(path: &Path) -> io::Result<()> {
-    let mut builder = DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(path)?;
-    let metadata = fs::symlink_metadata(path)?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(invalid("Output directory must be a real directory, not a symlink"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if metadata.permissions().mode() & 0o777 != 0o700 {
-            fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
-        }
-    }
-    Ok(())
-}
 
 fn write_outputs(
     output_dir: &Path,
@@ -384,7 +362,7 @@ fn write_outputs(
             Err(error) => return Err(error.into()),
         }
     }
-    private_directory(output_dir)?;
+    crate::paths::private_directory(output_dir)?;
     let mut paths = Vec::with_capacity(outputs.len());
     for (path, bytes) in outputs {
         let mut options = OpenOptions::new();

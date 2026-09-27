@@ -1,13 +1,14 @@
 mod cli;
 mod output;
+mod paths;
 
 use clap::Parser;
 use output::{write_accessory, OutputFormat};
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
+#[cfg(test)]
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -182,7 +183,8 @@ mod tests;
 fn run_diagnostics(args: &cli::Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut files = args.files.clone();
     if files.is_empty() {
-        for entry in std::fs::read_dir(&args.output_dir)? {
+        let output_dir = paths::output_directory(args.output_dir.as_deref())?;
+        for entry in std::fs::read_dir(&output_dir)? {
             let path = entry?.path();
             if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
                 files.push(path);
@@ -258,7 +260,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if args.files.is_empty() {
             return Err("--convert=home-assistant requires one or more input files".into());
         }
-        for path in output::convert_home_assistant(&args.files, &args.output_dir)? {
+        let output_dir = paths::output_directory(args.output_dir.as_deref())?;
+        for path in output::convert_home_assistant(&args.files, &output_dir)? {
             println!("Converted: {}", path.display());
         }
         return Ok(());
@@ -271,16 +274,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     unsafe { libc::umask(0o077); }
     pretty_env_logger::init();
+    let state_dir = paths::state_directory(args.state_dir.as_deref())?;
+    let output_dir = paths::output_directory(args.output_dir.as_deref())?;
+    paths::require_writable_directory(&state_dir, "--state-dir")?;
+    paths::require_writable_directory(&output_dir, "--output-dir")?;
+    let anisette_config_path = state_dir.join("anisette_state");
+    paths::require_writable_directory(&anisette_config_path, "--state-dir")?;
+    let keystore_path = state_dir.join("keystore.plist");
+    paths::check_existing_state_file(&keystore_path)?;
+    paths::check_existing_state_file(&anisette_config_path.join("state.plist"))?;
+    let keystore_state = match std::fs::read(&keystore_path) {
+        Ok(bytes) => plist::from_bytes(&bytes)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Default::default(),
+        Err(error) => return Err(error.into()),
+    };
+    eprintln!("Authentication state: {}", state_dir.display());
+    eprintln!("Export directory: {}", output_dir.display());
     init_keystore(SoftwareKeystore {
-        state: plist::from_file("keystore.plist").unwrap_or_default(),
-        update_state: Box::new(|state| {
-            plist::to_file_xml("keystore.plist", state).unwrap();
+        state: keystore_state,
+        update_state: Box::new(move |state| {
+            plist::to_file_xml(&keystore_path, state).expect("Cannot persist keychain state in the selected --state-dir");
         }),
         encryptor: NoEncryptor,
     });
     let mut apple_id = args.apple_id.unwrap_or_default();
     let anisette_url = args.anisette_url;
-    let output_dir = args.output_dir;
     let format: OutputFormat = args.output.into();
 
     if apple_id.is_empty() {
@@ -297,8 +315,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── Step 1: Create anisette client ──────────────────────────────
     eprintln!("[1/7] Connecting to anisette server...");
-    let anisette_config_path = PathBuf::from_str("anisette_state").unwrap();
-    std::fs::create_dir_all(&anisette_config_path).ok();
 
     let login_info = config.get_gsa_config(&APSState::default(), false);
 

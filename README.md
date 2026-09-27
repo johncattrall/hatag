@@ -33,9 +33,9 @@ brew upgrade johncattrall/tap/hatag
 This is our [personal tap](https://github.com/johncattrall/homebrew-tap), not a
 Homebrew/core package. The current binary is built for arm64; Intel and Linux users
 must build from source. macOS may request Bluetooth permission for your terminal.
-Upgrade/uninstall does not remove exported files, backups, or Apple state created
-in your working directory. Versioned binaries and their corresponding source
-archives are published on the repository's Releases page.
+Upgrade/uninstall does not remove exported files, backups, or authentication state.
+Versioned binaries and their corresponding source archives are published on the
+repository's Releases page.
 
 ### Upgrading an existing installation
 
@@ -107,6 +107,31 @@ The default anisette v3 service is `https://ani.sidestore.io`; change it with
 `--anisette-url URL`. Offline conversion and diagnostics do not contact this service,
 sign in to Apple, or initialize iCloud Keychain state.
 
+### Storage locations
+
+`hatag` does not write authentication state into the directory you launched it from.
+It uses the current user's application-data directory:
+
+| Platform | Base directory |
+|---|---|
+| macOS | `~/Library/Application Support/hatag` |
+| Linux | `$XDG_DATA_HOME/hatag`, or `~/.local/share/hatag` |
+| Windows | `%LOCALAPPDATA%\hatag` |
+
+Authentication files live in `state/`; exports default to `exports/`. The actual
+paths are printed and write access is checked **before** asking for your Apple ID
+or password. Created storage directories are private (`0700` on Unix).
+
+Use `--state-dir PATH` (or `HATAG_STATE_DIR`) to choose a different authentication
+directory, and `--output-dir PATH` for exports or offline conversions. A relative
+override is intentionally relative to your current directory. Do not use `sudo`.
+
+Versions before 0.1.3 wrote `keystore.plist` and `anisette_state/` into the working
+directory. They are not moved or deleted automatically. To reuse them, pass
+`--state-dir /path/to/that/old/directory`; choose a fresh output directory when
+exporting again. Explicit diagnostic file arguments are unaffected by these defaults.
+
+
 ## Convert existing exports offline
 
 ```bash
@@ -146,7 +171,7 @@ python3 -m venv .venv
 ```
 
 Without explicit files, diagnostics reads JSON files from `--output-dir` (default
-`ha-imports`). `HATAG_PYTHON` can select the interpreter instead of `--python`.
+`hatag/exports` beneath the user's application-data directory). `HATAG_PYTHON` can select the interpreter instead of `--python`.
 The diagnostic source is embedded in the compiled binary, so moving the binary
 alone does not break its script lookup.
 
@@ -202,8 +227,8 @@ produce the same network reports as a separated accessory.
   Do not publish them or paste their contents into issues/chat.
 - On Unix, exported files and diagnostic backups use mode `0600`; created output
   directories use `0700`. Protect copies and non-Unix destinations yourself.
-- `keystore.plist` and `anisette_state/` contain provisioning/keychain state. They are
-  separate from exported accessory files and must stay private.
+- `state/keystore.plist` and `state/anisette_state/` beneath the application-data
+  directory contain provisioning/keychain state. Keep them private.
 - The exporter authenticates as a synthetic device and joins the iCloud Keychain
   trust circle. It retains the upstream escrow behavior; this is not a read-only
   Apple account operation.
