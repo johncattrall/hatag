@@ -1,15 +1,15 @@
 [package]
 name = "hatag"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "HAtag: tag export and diagnostics for Home Assistant"
 
 [dependencies]
-rustpush = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989", default-features = false, features = ["remote-anisette-v3"] }
-omnisette = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989" }
-icloud_auth = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989", default-features = false, features = ["remote-anisette-v3"] }
-keystore = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989" }
-cloudkit-proto = { git = "https://github.com/johncattrall/rustpush.git", rev = "299e4389b7bc68123922c651da92dac8ac45c989" }
+rustpush = { git = "https://github.com/johncattrall/rustpush.git", rev = "48afd8a3a7319a2efd10e1f708e525deb2886013", default-features = false, features = ["remote-anisette-v3"] }
+omnisette = { git = "https://github.com/johncattrall/rustpush.git", rev = "48afd8a3a7319a2efd10e1f708e525deb2886013" }
+icloud_auth = { git = "https://github.com/johncattrall/rustpush.git", rev = "48afd8a3a7319a2efd10e1f708e525deb2886013", default-features = false, features = ["remote-anisette-v3"] }
+keystore = { git = "https://github.com/johncattrall/rustpush.git", rev = "48afd8a3a7319a2efd10e1f708e525deb2886013" }
+cloudkit-proto = { git = "https://github.com/johncattrall/rustpush.git", rev = "48afd8a3a7319a2efd10e1f708e525deb2886013" }
 tokio = { version = "1", features = ["full"] }
 plist = "1.7.0"
 sha2 = "0.10.8"

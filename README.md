@@ -66,9 +66,9 @@ cargo build --release --locked
 ```
 
 The dependency and its related crates are pinned to
-[`johncattrall/rustpush@299e4389`](https://github.com/johncattrall/rustpush/commit/299e4389b7bc68123922c651da92dac8ac45c989),
-which explicitly supplies the RFC 3394 AES key-wrap IV instead of panicking in
-OpenSSL. No dependency source is vendored in this repository.
+[`johncattrall/rustpush@48afd8a3`](https://github.com/johncattrall/rustpush/commit/48afd8a3a7319a2efd10e1f708e525deb2886013),
+which retains the explicit RFC 3394 AES key-wrap IV and pins anisette header-error
+propagation instead of panicking. No dependency source is vendored in this repository.
 
 If Cargo cannot fetch an upstream submodule over SSH, use HTTPS for that build
 without changing global Git configuration:
@@ -106,6 +106,15 @@ The interactive exporter requests:
 The default anisette v3 service is `https://ani.sidestore.io`; change it with
 `--anisette-url URL`. Offline conversion and diagnostics do not contact this service,
 sign in to Apple, or initialize iCloud Keychain state.
+
+The anisette service is checked before requesting your Apple ID or password.
+HTTP, transport, malformed-response, and service errors are reported rather than
+replaced with an `explicit panic`. A failed ordinary header request does not erase
+provisioning state. Service outages can be transient: keep the state directory and
+retry later, or explicitly choose a service you trust with `--anisette-url`.
+Do not repeatedly re-enter credentials or delete provisioning state to fix an
+ordinary network/server error. HAtag does not automatically retry Apple login.
+
 
 ### Storage locations
 

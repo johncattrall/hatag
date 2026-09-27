@@ -301,14 +301,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let anisette_url = args.anisette_url;
     let format: OutputFormat = args.output.into();
 
-    if apple_id.is_empty() {
-        eprint!("Apple ID: ");
-        std::io::stdin().read_line(&mut apple_id)?;
-        apple_id = apple_id.trim().to_string();
-    }
-
-    eprint!("Password: ");
-    let password = read_password();
 
 
     let config: Arc<dyn OSConfig> = Arc::new(FakeIOSConfig::new());
@@ -326,6 +318,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 anisette_config_path,
             ),
         )));
+    anisette_client.lock().await.get_headers().await.map_err(|error| {
+        format!("Anisette service {anisette_url} failed before Apple login: {error}. No Apple credentials were submitted. Retry later or select --anisette-url URL; keep the existing state directory.")
+    })?;
+    eprintln!("  Anisette headers ready.");
+
+    if apple_id.is_empty() {
+        eprint!("Apple ID: ");
+        std::io::stdin().read_line(&mut apple_id)?;
+        apple_id = apple_id.trim().to_string();
+    }
+
+    eprint!("Password: ");
+    let password = read_password();
 
     // ── Step 2: Login to Apple ──────────────────────────────────────
     eprintln!("[2/7] Logging in to Apple ID...");
