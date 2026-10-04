@@ -90,8 +90,13 @@ env CARGO_NET_GIT_FETCH_WITH_CLI=true \
   --output-dir ./ha-imports
 ```
 
-JSON is the default. Choose `--output plist` or `--output both` when needed. Existing
-files are never overwritten; use a fresh output directory for a later export.
+JSON is the default. Choose `--output plist` or `--output both` when needed.
+Repeated exports work in the same directory: byte-identical files are reused;
+different content is written to a numbered sibling (`-1.findmy.json`, `-2.findmy.json`,
+and so on). JSON/plist pairs keep matching basenames. Existing files are never
+overwritten, including any saved Bluetooth alignment or custom metadata. Use the
+path printed by the command for the new export; an older aligned file remains
+available rather than having its alignment silently replaced with cloud data.
 Names are joined using CloudKit record IDs, and filenames include a hash of the
 full record ID so duplicate or sanitized names cannot overwrite other accessories.
 You may rename files after export; identity and keys are inside the files.
@@ -141,8 +146,8 @@ override is intentionally relative to your current directory. Do not use `sudo`.
 
 Versions before 0.1.3 wrote `keystore.plist` and `anisette_state/` into the working
 directory. They are not moved or deleted automatically. To reuse them, pass
-`--state-dir /path/to/that/old/directory`; choose a fresh output directory when
-exporting again. Explicit diagnostic file arguments are unaffected by these defaults.
+`--state-dir /path/to/that/old/directory`. Explicit diagnostic file arguments are
+unaffected by these defaults.
 
 Version 0.1.3 briefly defaulted exports to `hatag/exports` beneath application data.
 Existing files there are left untouched; starting with 0.1.4, the default is the
@@ -162,8 +167,8 @@ This native conversion requires no Python or Apple login. It accepts legacy
 exporter plists with raw key bytes, Apple-style nested-key plists, and FindMy.py
 accessory JSON. Dates, key lengths, and observed alignment are validated. The old
 standalone `convert_findmy_export.py` command has been replaced by this mode.
-Original files are unchanged; existing output files are rejected rather than
-silently overwritten.
+Original files are unchanged. Existing byte-identical outputs are reused; changed
+outputs receive numbered sibling filenames, using the same rules as cloud export.
 
 JSON output uses FindMy.py's `type: accessory` schema and preserves names,
 identifiers, pairing dates, and available rolling-key alignment. Unknown alignment

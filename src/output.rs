@@ -205,7 +205,7 @@ pub fn write_accessory(
         accessory_to_plist(acc).to_writer_xml(&mut bytes)?;
         outputs.push((path, bytes));
     }
-    write_outputs(output_dir, outputs)
+    write_outputs(output_dir, vec![outputs])
 }
 
 fn plist_key<'a>(dict: &'a Dictionary, field: &str) -> io::Result<&'a [u8]> {
@@ -341,30 +341,94 @@ pub fn convert_home_assistant(
         };
         outputs.push((path, output));
     }
-    write_outputs(output_dir, outputs)
+    write_outputs(output_dir, outputs.into_iter().map(|output| vec![output]).collect())
 }
 
 
+fn numbered_path(path: &Path, number: usize) -> PathBuf {
+    if number == 0 {
+        return path.to_path_buf();
+    }
+    let name = path.file_name().unwrap().to_str().unwrap();
+    let suffix = if name.ends_with(".findmy.json") { ".findmy.json" } else { ".plist" };
+    let stem = name.strip_suffix(suffix).unwrap();
+    path.with_file_name(format!("{stem}-{number}{suffix}"))
+}
+
+// None means free, Some(true) means reusable, Some(false) means keep it and
+// choose another name. Never follow a symlink or replace an existing file.
+fn existing_output(path: &Path, bytes: &[u8]) -> io::Result<Option<bool>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(invalid("Output path is not a regular file; refusing to follow or replace it"));
+    }
+    if metadata.len() != bytes.len() as u64 {
+        return Ok(Some(false));
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    use std::io::Read;
+    let mut file = options.open(path)?;
+    let mut existing = Vec::with_capacity(bytes.len());
+    // Limit the read in case another process grows the file after metadata.
+    Read::by_ref(&mut file).take(bytes.len() as u64 + 1).read_to_end(&mut existing)?;
+    Ok(Some(existing == bytes))
+}
+
 fn write_outputs(
     output_dir: &Path,
-    outputs: Vec<(PathBuf, Vec<u8>)>,
+    groups: Vec<Vec<(PathBuf, Vec<u8>)>>,
 ) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    // Validate every payload and destination before creating any files. create_new also
-    // closes the overwrite race between this check and the actual write.
-    let mut destinations = HashSet::with_capacity(outputs.len());
-    for (path, _) in &outputs {
+    let mut destinations = HashSet::new();
+    for (path, _) in groups.iter().flatten() {
         if !destinations.insert(path) {
             return Err(invalid("Multiple inputs resolve to the same output filename").into());
         }
-        match fs::symlink_metadata(path) {
-            Ok(_) => return Err(io::Error::new(io::ErrorKind::AlreadyExists, "Output file already exists; choose a fresh directory").into()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {},
-            Err(error) => return Err(error.into()),
+    }
+    // Plan all outputs before writing. JSON/plist pairs share the same suffix.
+    let mut planned = Vec::new();
+    let mut reserved = HashSet::new();
+    for group in groups {
+        let mut number = 0usize;
+        loop {
+            let mut candidates = Vec::with_capacity(group.len());
+            let mut conflict = false;
+            for (path, bytes) in &group {
+                let candidate = numbered_path(path, number);
+                let existing = existing_output(&candidate, bytes)?;
+                if reserved.contains(&candidate) || existing == Some(false) {
+                    conflict = true;
+                    break;
+                }
+                candidates.push(candidate);
+            }
+            if conflict {
+                number = number.checked_add(1).ok_or_else(|| invalid("Too many output versions"))?;
+                continue;
+            }
+            for ((_, bytes), path) in group.into_iter().zip(candidates) {
+                reserved.insert(path.clone());
+                planned.push((path, bytes));
+            }
+            break;
         }
     }
     crate::paths::require_writable_output_directory(output_dir)?;
-    let mut paths = Vec::with_capacity(outputs.len());
-    for (path, bytes) in outputs {
+    let mut paths = Vec::with_capacity(planned.len());
+    for (path, bytes) in planned {
+        if existing_output(&path, &bytes)? == Some(true) {
+            paths.push(path);
+            continue;
+        }
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]

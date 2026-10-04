@@ -103,7 +103,7 @@ fn naming_and_alignment_join_by_cloudkit_record_id() {
 }
 
 #[test]
-fn duplicate_names_preserve_each_accessory_and_reject_overwrite() {
+fn duplicate_names_and_repeat_exports_preserve_each_version() {
     let fixture = FixtureDirectory::new();
     let mut first = accessory();
     first.naming.name = "Keys/home".into();
@@ -118,9 +118,12 @@ fn duplicate_names_preserve_each_accessory_and_reject_overwrite() {
     let original = std::fs::read(&first_path).unwrap();
     first.alignment.last_index_observed = 123456;
     first.alignment.last_index_observation_date = Some(time("2026-09-26T00:00:00Z"));
-    assert!(write_accessory(&fixture.0, "record-one", &first, OutputFormat::Json).is_err());
-    assert_eq!(std::fs::read(first_path).unwrap(), original);
-    assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 2);
+    let updated = write_accessory(&fixture.0, "record-one", &first, OutputFormat::Json).unwrap().remove(0);
+    assert_ne!(updated, first_path);
+    assert_eq!(std::fs::read(&first_path).unwrap(), original);
+    assert_eq!(json_file(&updated)["alignment_index"], 123456);
+    assert_eq!(write_accessory(&fixture.0, "record-one", &first, OutputFormat::Json).unwrap(), vec![updated]);
+    assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 3);
 }
 
 #[test]
@@ -245,14 +248,18 @@ fn invalid_native_records_never_leave_partial_both_outputs() {
 }
 
 #[test]
-fn both_prechecks_existing_plist_before_creating_json() {
+fn both_keeps_matching_basenames_when_one_old_format_conflicts() {
     let fixture = FixtureDirectory::new();
     let acc = accessory();
     let existing = fixture.0.join(accessory_filename(&acc.naming.name, "record"));
     std::fs::write(&existing, b"previous user data").unwrap();
-    assert!(write_accessory(&fixture.0, "record", &acc, OutputFormat::Both).is_err());
+    let outputs = write_accessory(&fixture.0, "record", &acc, OutputFormat::Both).unwrap();
+    assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs[0].with_extension("").with_extension("plist"), outputs[1]);
     assert!(!existing.with_extension("findmy.json").exists());
     assert_eq!(std::fs::read(existing).unwrap(), b"previous user data");
+    assert_eq!(write_accessory(&fixture.0, "record", &acc, OutputFormat::Both).unwrap(), outputs);
+    assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 3);
 }
 
 fn legacy_plist() -> plist::Value {
@@ -334,7 +341,7 @@ fn json_conversion_preserves_metadata_and_alignment_without_repeated_suffixes() 
     assert_eq!(json_file(&second), value);
     assert_eq!(first.file_name(), second.file_name());
     assert_eq!(first.file_name().unwrap().to_str().unwrap().matches(".findmy.json").count(), 1);
-    assert!(convert_home_assistant(&[first], &fixture.0.join("two")).is_err());
+    assert_eq!(convert_home_assistant(&[first], &fixture.0.join("two")).unwrap(), vec![second.clone()]);
     assert_eq!(json_file(&second), value);
 }
 
@@ -486,4 +493,43 @@ fn exports_create_private_directories_files_and_reject_symlink_targets() {
     let linked_directory = fixture.0.join("linked-directory");
     symlink(&output, &linked_directory).unwrap();
     assert!(write_accessory(&linked_directory, "third-record", &acc, OutputFormat::Json).is_err());
+}
+
+#[test]
+fn rerunning_export_preserves_locally_aligned_json_and_unknown_fields() {
+    let fixture = FixtureDirectory::new();
+    let acc = accessory();
+    let original_path = write_accessory(&fixture.0, "record", &acc, OutputFormat::Json).unwrap().remove(0);
+    let mut aligned = json_file(&original_path);
+    aligned["alignment_date"] = serde_json::json!("2026-09-26T03:00:00+00:00");
+    aligned["alignment_index"] = serde_json::json!(98765);
+    aligned["custom_metadata"] = serde_json::json!({"keep": true});
+    write_json_fixture(&original_path, &aligned);
+    let original_bytes = std::fs::read(&original_path).unwrap();
+    let fresh_path = write_accessory(&fixture.0, "record", &acc, OutputFormat::Json).unwrap().remove(0);
+    assert_ne!(fresh_path, original_path);
+    assert_eq!(std::fs::read(&original_path).unwrap(), original_bytes);
+    assert_eq!(json_file(&fresh_path)["master_key"], aligned["master_key"]);
+    assert!(json_file(&fresh_path)["alignment_index"].is_null());
+    assert_eq!(write_accessory(&fixture.0, "record", &acc, OutputFormat::Json).unwrap(), vec![fresh_path]);
+    assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 2);
+}
+
+#[test]
+fn repeated_conversion_keeps_old_keys_and_uses_existing_identical_version() {
+    let fixture = FixtureDirectory::new();
+    let source = fixture.0.join("input.json");
+    let output = fixture.0.join("out");
+    let original = json_fixture();
+    write_json_fixture(&source, &original);
+    let first = convert_home_assistant(&[source.clone()], &output).unwrap().remove(0);
+    let mut changed = original.clone();
+    changed["skn"] = serde_json::json!("04".repeat(32));
+    write_json_fixture(&source, &changed);
+    let second = convert_home_assistant(&[source.clone()], &output).unwrap().remove(0);
+    assert_ne!(first, second);
+    assert_eq!(json_file(&first), original);
+    assert_eq!(json_file(&second), changed);
+    assert_eq!(convert_home_assistant(&[source], &output).unwrap(), vec![second]);
+    assert_eq!(std::fs::read_dir(&output).unwrap().count(), 2);
 }
